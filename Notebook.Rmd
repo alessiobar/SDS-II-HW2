@@ -1,0 +1,510 @@
+---
+title: "Homework #2 - Statistical Methods in Data Science II & Lab"
+author: "Barboni Alessio, 2027647"
+date: 15/06/2022
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Exercise 1
+
+## 1A)    
+  
+```{r}
+# Import data
+df <- list(x = c(1.0, 1.5, 1.5, 1.5, 2.5, 4.0, 5.0, 5.0, 7.0,
+                     8.0,  8.5,  9.0,  9.5, 9.5,  10.0, 12.0, 12.0, 13.0,
+                     13.0, 14.5, 15.5, 15.5, 16.5, 17.0, 22.5, 29.0, 31.5),
+           Y = c(1.80, 1.85, 1.87, 1.77, 2.02, 2.27, 2.15, 2.26, 2.47,
+                     2.19, 2.26, 2.40, 2.39, 2.41, 2.50, 2.32, 2.32, 2.43,
+                     2.47, 2.56, 2.65, 2.47, 2.64, 2.56, 2.70, 2.72, 2.57), 
+           N = 27)
+```
+
+```{r, echo = FALSE}
+plot(df$x, df$Y, xlab="Age", ylab="Length (m)", main = "Dugongs Data", col = "#642fee", pch= 19)
+```
+
+The statistical model for dealing with this data is illustrated in Carlin and Gelfand (1991), and consists in the following non-linear regression model:
+
+
+$y_i \sim \mathbb{N}(\mu_i, \tau^2), \;\;\; \mu_i=f(x_i)=\alpha-\beta \gamma^{x_i}$
+
+Where: $\: \alpha \sim \mathbb{N}(0, \sigma_{\alpha}^2), \;\; \beta \sim \mathbb{N}(0, \sigma_{\beta}^2) \:$ with $\: \alpha, \beta \in (1,\infty)$
+
+$\gamma \sim Unif(0,1)$,  with  $\: \gamma \in (0,1) \:$  and  $\: \tau^2 \sim InvGamma(a,b) \:$ with $\: \tau^2 \in (0,\infty)$
+
+This model will be defined later using the *JAGS syntax* in a *txt* file named "*dugong_model.txt*", containing the following lines:
+
+```{r, eval=FALSE}
+
+model	{
+		for( i in 1:N ) {
+			Y[i] ~ dnorm(mu[i], precision)
+			mu[i] <- alpha - beta * pow(gamma,x[i])			
+		}
+		alpha ~ dnorm(0.0, 1.0E-3)I(1.0,)
+		beta ~ dnorm(0.0, 1.0E-3)I(1.0,)
+		gamma ~ dbeta(1.0, 1.0)
+		precision ~ dgamma(2.5, 0.1125)
+	}
+```
+
+Since the *Inverse Gamma distribution* is not available in JAGS (cf. *JAGS-user-manual* pg. 34), the *variance* $\tau^2$ has been re-parametrized with the *precision*, defined as $\frac{1}{\tau^2}$, that is distributed as a *Gamma* with the same parameters.
+
+### 1B)
+
+**Likelihood function** derivation:
+
+$L_{\mathbf{y}}(\boldsymbol{\mu}, \tau^2) := \prod\limits_{i=1}^{n} f(y_i|\mu_i, \tau^2) = \prod\limits_{i=1}^{n} \frac{1}{\sqrt{2\pi\tau^2}} \, e^{-\frac{1}{2\tau^2}(y_i-\mu_i)^2} \small{I_{(0,\infty)}(\tau^2)} \propto \\ \propto \prod\limits_{i=1}^{n}\tau^{-1} \, e^{-\frac{1}{2\tau^2}(y_i-\alpha+\beta \gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; \small{I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)}} = \\ = \tau^{-n} \, e^{-\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)}$
+
+
+### 1C)
+**Joint prior distribution** of the parameters:
+
+$\pi(\alpha, \beta, \gamma, \tau^2) \stackrel{ind}{=} \pi(\alpha)\pi(\beta)\pi(\gamma)\pi(\tau^2) = \\ = \frac{1}{\sqrt{2\pi\sigma_{\alpha}^2}} \; e^{-\frac{1}{2\sigma_{\alpha}^2}\alpha^2}\frac{1}{\sqrt{2\pi\sigma_{\beta}^2}} \; e^{-\frac{1}{2\sigma_{\beta}^2}\beta^2} \frac{1}{1-0} \; \frac{b^a}{(a-1)!} \; \tau^{2(-a-1)} \; e^{-\frac{b}{\tau^2}} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,\infty)}(\tau^2)}$
+
+The choice of the hyperparameters of the prior distribution could even be arbitrary, since with large sample sizes the role played by the prior becomes more and more negligible. However, to have an idea about their appropriate scales academic research could be looked up, or more simply the dataset provided (as an approximation!).
+
+```{r}
+#Dataset summaries
+emp.mean <- round(mean(df$Y),3)
+emp.var <- round(var(df$Y),3)
+cat("Emp. Mean: ", emp.mean,", ", "Emp. Variance: ", emp.var, sep="")
+
+```
+
+- Inverse Gamma hyperparameters: $\tau^2$ is the actual variance of the response $y_i$, thus the hyperparameters of its distribution can be set in such a way to have the mean of the inverse gamma (approximately) equal to the empirical variance of the $y_i$'s of the sample dataset (i.e., 0.075). The former is defined as $\frac{b}{a-1}$, hence a system of one equation and two unknowns is set. Of course, since the dataset has only 27 observations, it is better to have a prior that it's not too concentrated around that value, but rather flat. Below the result obtained by trial and error:  
+
+```{r}
+library(invgamma)
+#arbitrary choice for a
+a <- 2.5
+#solve for b
+b <- a*emp.var - emp.var
+cat("a: ",a,", ","b: ", b, ", ","var: ",b/(a-1), sep="")
+```
+
+```{r, echo=FALSE}
+curve(dinvgamma(x, a, b), lwd=2, col="#642fee",0,0.3, xlab="x", ylab="", main="Inverse Gamma(a, b) pdf")
+abline(v=emp.var, lty=2, col="green", lwd=2)
+legend("topright", legend=c("pdf", "emp. var"), col=c("#642fee", "green"), lty=c(1,2))
+```
+
+- Hyperparameters of $\alpha$ and $\beta$: $\;\sigma_{\alpha}^2$ and $\sigma_{\beta}^2$ control the variance of the distributions for the terms of the non-linear regression. Since their domain seems less obvious, their value will be set according to the in-class example (i.e., both equal to $10^{-3}$).
+
+
+Pluggin-in these values in the joint prior derived above:
+
+$\pi(\alpha, \beta, \gamma, \tau^2) = \frac{1}{\sqrt{2\pi\cdot10^{-3}}} \; e^{-\frac{1}{2\cdot10^{-3}}\alpha^2}\frac{1}{\sqrt{2\pi\cdot10^{-3}}} \; e^{-\frac{1}{2\cdot10^{-3}}\beta^2} \frac{0.1125^{2.5}}{(2.5-1)!} \; \tau^{2(-2.5-1)} \; e^{-\frac{0.1125}{\tau^2}} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,\infty)}(\tau^2)}$
+
+### 1D)
+
+**Full-Conditional for** $\boldsymbol{\alpha}$: $\;\; \pi(\alpha|\beta, \gamma, \tau^2, \mathbf{y}) \propto \pi( \alpha) L_{\mathbf{y}}(\alpha, \beta, \gamma,\tau^2) \propto \\$ $\propto \frac{1}{\sqrt{2\pi\sigma_{\alpha}^2}} \; e^{-\frac{1}{2\sigma_{\alpha}^2}\alpha^2} \tau^{-n} \, e^{-\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)} \propto \\ \propto e^{-\frac{1}{2\sigma_{\alpha}^2}\alpha^2 -\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)} \propto \\ \propto e^{-\frac{1}{2}\alpha^2(\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2})+\frac{\alpha}{\tau^2} \sum\limits_{i=1}^{n}(y_i+\beta\gamma^{x_i})} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)}$
+
+
+**Full-Conditional for** $\boldsymbol{\beta}$: $\;\; \pi(\beta|\alpha, \gamma, \tau^2, \mathbf{y}) \propto \pi(\beta) L_{\mathbf{y}}(\alpha, \beta, \gamma,\tau^2) \propto \\$ $\frac{1}{\sqrt{2\pi\sigma_{\beta}^2}} \; e^{-\frac{1}{2\sigma_{\beta}^2}\beta^2} \tau^{-n} \, e^{-\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)} \propto \\ \propto e^{-\frac{1}{2\sigma_{\beta}^2}\beta^2 -\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)} \propto \\ \propto e^{-\frac{1}{2\sigma_{\beta}^2}\beta^2-\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}[\beta^{2}\gamma^{2x_i}+2 \, \beta\gamma^{x_i}(y_{i}-\alpha)]} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)}$
+
+
+**Full-Conditional for** $\boldsymbol{\gamma}$: $\;\; \pi(\gamma|\alpha, \beta, \tau^2, \mathbf{y}) \propto \pi(\gamma) L_{\mathbf{y}}(\alpha, \beta, \gamma,\tau^2) \propto \\$ $\propto \tau^{-n} \, e^{-\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)} \propto \\ \propto e^{-\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}[\beta^{2}\gamma^{2x_i}+2 \, \beta\gamma^{x_i}(y_{i}-\alpha)]} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)}$
+
+
+**Full-Conditional for** $\boldsymbol{\tau^2}$: $\;\; \pi(\tau^2|\alpha, \beta, \gamma, \mathbf{y}) \propto \pi(\tau^2) L_{\mathbf{y}}(\alpha, \beta, \gamma,\tau^2) \propto \\$ $\propto \tau^{2(-a-1)} \; e^{-\frac{b}{\tau^2}} \tau^{-n} \, e^{-\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)} \propto \\ \propto \tau^{2(-a-1)-n} \; e^{-\frac{b}{\tau^2} -\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} \; \small{I_{(1,\infty)}(\alpha) \; I_{(1,\infty)}(\beta) \; I_{(0,1)}(\gamma) \; I_{(0,\infty)}(\tau^2)}$
+
+
+### 1E)
+
+In order to sample easily in R from the four full-conditionals, (up to some proportionality constants) it can be noticed that:
+
+- $\alpha$'s full conditional resembles a $\mathbb{N}(\mu=\mu_{\alpha'},\; \sigma^2= \tau_{\alpha'}^2)$, in fact:
+
+$\pi(\alpha|\beta, \gamma, \tau^2, \mathbf{y}) \propto e^{-\frac{1}{2}\alpha^2(\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2})+\frac{\alpha}{\tau^2}\sum\limits_{i=1}^{n}(y_i+\beta\gamma^{x_i})} = e^{-\frac{1}{2}((\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2})\alpha^2-(\frac{2}{\tau^2} \sum\limits_{i=1}^{n}(y_i+\beta\gamma^{x_i}))\alpha)} = \\ = e^{-\frac{1}{2}(\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2})\left(\alpha^2-\frac{\frac{2}{\tau^2} \sum\limits_{i=1}^{n}(y_i+\beta\gamma^{x_i})}{\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2}}\alpha\right)}$
+
+Since everything is computed up to proportionality constants, let's call $\boldsymbol{\color{red}{\Delta}} = \frac{\frac{2}{\tau^2} \sum\limits_{i=1}^{n}(y_i+\beta\gamma^{x_i})}{\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2}} \in \mathbb{R}$, the expression above is proportional to:
+
+$\propto e^{-\frac{1}{2}(\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2})\left(\alpha^2-\boldsymbol{\color{red}{\Delta}} \alpha + (\frac{\boldsymbol{\color{red}{\Delta}}}{2})^2\right)} = e^{-\frac{1}{2\;(\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2})^{\small{-1}}}(\alpha - \frac{\boldsymbol{\color{red}{\Delta}}}{2})^2}$
+
+i.e., $e^{-\frac{1}{2\tau_{\alpha'}^2}(\alpha - \mu_{\alpha'})^2}\small{I_{(1,\infty)}(\alpha)}$, where $\; \mu_{\alpha'} = \frac{\frac{2}{\tau^2}\sum\limits_{i=1}^{n}(y_i+\beta\gamma^{x_i})}{2(\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2})}$ and $\tau_{\alpha'}^2 = (\frac{n}{\tau^2}+\frac{1}{\sigma_{\alpha}^2})^{\tiny{-1}}$
+
+- $\beta$'s full conditional resembles a $\mathbb{N}(\mu=\mu_{\beta'},\; \sigma^2= \tau^2_{\beta'})$, in fact:
+
+$\pi(\beta|\alpha, \gamma, \tau^2, \mathbf{y}) \propto e^{-\frac{1}{2\sigma_{\beta}^2}\beta^2-\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(\beta^{2}\gamma^{2x_i}+2 \, \beta\gamma^{x_i}(y_{i}-\alpha))} = e^{-\frac{1}{2\sigma_{\beta}^2}\beta^2- \frac{1}{2}\beta^{2}\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{\tau^2}- \frac{1}{2}\beta\sum\limits_{i=1}^{n}\frac{2\gamma^{x_i}(y_{i}-\alpha)}{\tau^2}} = \\ = e^{-\frac{1}{2}(\frac{1}{\sigma_{\beta}^2}\beta^2+ \beta^{2}\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2}+ \beta\sum\limits_{i=1}^{n}\frac{2\gamma^{x_i}(y_{i}-\alpha)}{\tau^2})} = e^{-\frac{1}{2}(\beta^2(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})+ \beta\sum\limits_{i=1}^{n}\frac{2\gamma^{x_i}(y_{i}-\alpha)}{\tau^2})} = \\ = e^{-\frac{1}{2}(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})(\beta^2+ \beta(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}} \sum\limits_{i=1}^{n}\frac{2\gamma^{x_i}(y_{i}-\alpha)}{\tau^2})} = \\ = e^{-\frac{1}{2(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}}}(\beta^2+ \beta(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}} \sum\limits_{i=1}^{n}\frac{2\gamma^{x_i}(y_{i}-\alpha)}{\tau^2})}$
+
+Now, just for clarity, let's call $\boldsymbol{\color{blue}{\Delta}} = (\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}} \sum\limits_{i=1}^{n}\frac{2\gamma^{x_i}(y_{i}-\alpha)}{\tau^2} \in \mathbb{R}$, then:
+
+$= e^{-\frac{1}{2(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}}}(\beta^2+ \beta\boldsymbol{\color{blue}{\Delta}})} \propto e^{-\frac{1}{2(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}}}(\beta^2+ \beta\boldsymbol{\color{blue}{\Delta}}+(\frac{\boldsymbol{\color{blue}{\Delta}}}{2})^2)} = \\ = e^{-\frac{1}{2(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}}}(\beta+\frac{\boldsymbol{\color{blue}{\Delta}}}{2})^2}$
+
+Hence, $e^{-\frac{1}{2\tau^2_{\beta'}}(\beta-\mu_{\beta'})^2}\small{I_{(1,\infty)}(\beta)}$, where $\mu_{\beta'}=-\frac{1}{2}(\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}} \sum\limits_{i=1}^{n}\frac{2\gamma^{x_i}(y_{i}-\alpha)}{\tau^2}$ and $\tau^2_{\beta'} = (\frac{1}{\sigma_{\beta}^2}+\sum\limits_{i=1}^{n}\frac{\gamma^{2x_i}}{2\tau^2})^{\small{-1}}$
+
+
+- $\gamma$'s full conditional does not seem to belong to any standard parametric family I can think of.
+
+- $\tau^2$'s full conditional resembles an ${InvGamma}(a=a',\; b= b')$, in fact:
+
+$\tau^{2(-a-1)-n} \; e^{-\frac{b}{\tau^2} -\frac{1}{2\tau^2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2} = \tau^{2((-a-n)-1)} e^{-\frac{b+\frac{1}{2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2}{\tau^2}}$
+
+i.e., $\tau^{2(-a'-1)}e^{-\frac{-b'}{\tau^2}}$ where $a' = -a-1$ and $b' = b+\frac{1}{2} \sum\limits_{i=1}^{n}(y_i-\alpha+\beta\gamma^{x_i})^2$
+
+### 1F)
+
+```{r, message=FALSE}
+#import JAGS library
+suppressWarnings(library(R2jags))
+set.seed(42)
+
+#set up model parameters
+params <- c("alpha","beta","gamma","precision")
+inits <- list(alpha = 1.1, beta = 1.1, gamma = 0.5, precision = 1) #set arbitrarily
+
+init.values <- list(inits)
+
+model <- jags(data=df, inits=init.values, parameters.to.save=params,
+              model.file="dugong_model.txt", n.chains=1, n.iter=10000, 
+              n.thin=1, n.burnin=10, quiet = T)
+model
+
+```
+
+The table above contains approximated statistics about the posterior distribution for the related model. Among all, the empirical mean and empirical variance of the four parameters, and the quantiles taken at different levels.
+
+### 1G)
+
+```{r, message=FALSE}
+#import ggmcmc library
+suppressWarnings(library(ggmcmc))
+
+S <- ggs(as.mcmc(model))
+
+#trace plots
+ggs_traceplot(S, family = c("alpha"))
+ggs_traceplot(S, family = c("beta"))
+ggs_traceplot(S, family = c("gamma"))
+ggs_traceplot(S, family = c("precision"))
+
+```
+
+As it can be noticed, in all four of the plots there is no trend increasing/decreasing with the number of iterations. Instead, there are fluctuations from start to end (that in general could indicate that the chain might have reached the right distribution, i.e. the stationary distribution). The latter plot is by far the best one, it seems to provide the evidence of convergence. However, for the first and the third plot, things are far from being "perfect", in fact the *mixing* seems to be only marginal, and rather slow, potentially indicating high autocorrelation among the samples.
+
+### 1H)
+
+```{r}
+
+#running means
+ggs_running(S, family = c("alpha"))
+ggs_running(S, family = c("beta"))
+ggs_running(S, family = c("gamma"))
+ggs_running(S, family = c("precision"))
+```
+
+All the four plots underline a converging behavior for the empirical averages of the parameters, with increasing number of iterations.
+
+### 1I)
+
+```{r, message = FALSE}
+
+alpha.est <- model$BUGSoutput$mean$alpha
+beta.est <- model$BUGSoutput$mean$beta
+gamma.est <- model$BUGSoutput$mean$gamma
+prec.est <- model$BUGSoutput$mean$precision
+cat("Empirical Means:\n","alpha est.: ", round(alpha.est, 3), ", ",  "beta est.: ", round(beta.est, 3), ", ", "gamma est.: ", round(gamma.est, 3), ", ", "precision est.: ", round(prec.est, 3), ", ", sep="")
+
+suppressWarnings(library(LaplacesDemon))
+alpha.ess <- ESS(model$BUGSoutput$sims.array[,1,"alpha"])
+beta.ess <- ESS(model$BUGSoutput$sims.array[,1,"beta"])
+gamma.ess <- ESS(model$BUGSoutput$sims.array[,1,"gamma"])
+prec.ess <- ESS(model$BUGSoutput$sims.array[,1,"precision"])
+cat("Effective Sample Sizes:\n","alpha ess.: ", round(alpha.ess, 3), ", ",  "beta ess.: ", round(beta.ess, 3), ", ", "gamma ess.: ", round(gamma.ess, 3), ", ", "precision ess.: ", round(prec.ess, 3), ", ", sep="")
+
+# MCMC error (taking autocorrelation into account)
+alpha.appr.err <- var(model$BUGSoutput$sims.array[,1,"alpha"])/alpha.ess
+beta.appr.err <- var(model$BUGSoutput$sims.array[,1,"beta"])/beta.ess
+gamma.appr.err <- var(model$BUGSoutput$sims.array[,1,"gamma"])/gamma.ess 
+prec.appr.err <- var(model$BUGSoutput$sims.array[,1,"precision"])/prec.ess
+cat("alpha approx. error: ", alpha.appr.err, ", ",  "beta approx. error: ", beta.appr.err, ",\n", "gamma approx. error: ", gamma.appr.err, ", ", "precision approx. error: ", prec.appr.err, ", ", sep="")
+```
+
+The approximation error would have been simply the $\frac{sample \: var}{n}$ in the i.i.d. case, however in a MCMC it's computed as the sample variance divided by the effective sample size (ESS), since there is dependecy by construction between samples.
+
+### 1L)
+
+```{r}
+
+alpha.post.uncert <- model$BUGSoutput$sd$alpha
+beta.post.uncert <- model$BUGSoutput$sd$beta
+gamma.post.uncert <- model$BUGSoutput$sd$gamma
+prec.post.uncert <- model$BUGSoutput$sd$precision
+
+cat("alpha posterior uncertainty: ", round(alpha.post.uncert,3),", ","beta posterior uncertainty: ",round(beta.post.uncert,3),",\n","gamma posterior uncertainty: ",round(gamma.post.uncert,3),", ","precision posterior uncertainty: ",round(prec.post.uncert,3),", ",sep="")
+```
+
+The parameter having the highest posterior uncertainty in this case is the 
+*precision*. Its value was automatically computed by the JAGS model, and it is basically the standard deviation of the array of simulated values.
+
+```{r}
+#In fact:
+sd(model$BUGSoutput$sims.array[,,"precision"])
+```
+
+### 1M)
+
+```{r}
+
+corr.matrix <- cor(model$BUGSoutput$sims.array[,,c("alpha","beta","gamma","precision")])
+corr.matrix
+```
+```{r, echo=FALSE, message=FALSE}
+suppressWarnings(library(ggcorrplot))
+ggcorrplot(corr.matrix, type = "upper",outline.col = "black",hc.order = T, lab=T,ggtheme = ggplot2::theme_gray,title = "Correlation Plot", colors = c("green","white","#642fee")) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+As it can be seen in the correlation-plot above, the pair of parameters having the largest correlation in absolute value are *alpha* and *gamma*. Again, as in the previous point, this value was computed on the array of simulated values of the MCMC.
+
+### 1N)
+
+Starting by defining the model using JAGS language:
+```{r, eval = FALSE}
+model{
+		for( i in 1:N ) {
+			Y[i] ~ dnorm(mu[i], precision)
+			mu[i] <- alpha - beta * pow(gamma,x[i])			
+		}
+	  Ypred20 ~ dnorm(condexp20, precision)
+		condexp20 <- alpha - beta * pow(gamma,20)
+		alpha ~ dnorm(0.0, 1.0E-3)I(1.0,)
+		beta ~ dnorm(0.0, 1.0E-3)I(1.0,)
+		gamma ~ dbeta(1.0, 1.0)
+		precision ~ dgamma(2.5, 0.1125)
+	}
+```
+
+Then:
+
+```{r, message=FALSE}
+
+model.pred.20 <- jags(data=df, inits=init.values, 
+                      parameters.to.save=c("alpha","beta","gamma","precision","Ypred20","condexp20"), model.file="dugong_pred_20_model.txt",
+                      n.chains=1, n.iter=10000, n.thin=1, n.burnin=10, quiet = T)
+model.pred.20
+```
+
+```{r, echo=FALSE}
+
+plot(density(model.pred.20$BUGSoutput$sims.array[,1,"Ypred20"]),col="#642fee",main = "Posterior predictive distribution of the length of a 20 y.o. dugong", lwd=2)
+```
+
+```{r, echo=FALSE}
+
+cat("Prediction for the length of a 20 y.o. dugong:", model.pred.20$BUGSoutput$mean$Ypred20)
+```
+
+### 1O)
+
+The model specified in the txt file is now equal to the one of the previous point, with the $x_i$ of the regression equation set equal to 30.
+
+```{r, message=FALSE}
+
+model.pred.30 <- jags(data = df, inits = init.values,
+                      parameters.to.save=c("alpha","beta","gamma","precision","Ypred30","condexp30"), 
+                      model.file="dugong_pred_30_model.txt", n.chains=1, n.iter=10000, n.thin=1, 
+                      n.burnin=10, quiet = T)
+model.pred.30
+```
+
+```{r, echo = FALSE}
+
+plot(density(model.pred.20$BUGSoutput$sims.array[,1,"Ypred20"]),col="#642fee",main = "Posterior predictive distribution of the length of a dugong", lwd=2)
+lines(density(model.pred.30$BUGSoutput$sims.array[,1,"Ypred30"]),col="green", lwd=2)
+legend("topright",legend = c("Age = 20", "Age = 30"),col = c("#642fee","green"), lty=1)
+```
+
+```{r, echo=FALSE}
+
+cat("Prediction of length of dugong with age x_i = 30:", model.pred.30$BUGSoutput$mean$Ypred30)
+```
+
+### 1P)
+To assess which prediction is less precise, the posterior uncertainty or the size of the equal-tailed credible interval can be compared.
+
+```{r}
+pred.20.sd <- model.pred.20$BUGSoutput$sd$Ypred20
+pred.20.ci <- quantile(model.pred.20$BUGSoutput$sims.array[,,"Ypred20"], probs = c(0.025,0.975)) #at 95% 
+
+pred.30.sd <- model.pred.30$BUGSoutput$sd$Ypred30
+pred.30.ci <- quantile(model.pred.30$BUGSoutput$sims.array[,,"Ypred30"], probs = c(0.025,0.975)) #at 95% 
+
+```
+```{r, echo= FALSE}
+cat("Prediction for Age = 20: ",round(model.pred.20$BUGSoutput$mean$Ypred20,3),"\n", "sd: ", round(pred.20.sd,3), ", ", "ETI: ","[",round(pred.20.ci[1],3),", ", round(pred.20.ci[2],3),"], " , "ETI size: ",round(pred.20.ci[2]-pred.20.ci[1],3) ,"\n\n",
+    "Prediction for Age = 30: ",round(model.pred.30$BUGSoutput$mean$Ypred30,3),"\n", "sd: ", round(pred.30.sd,3), ", ", "ETI: ","[",round(pred.30.ci[1],3),", ", round(pred.30.ci[2],3),"], ", "ETI size: ",round(pred.30.ci[2]-pred.30.ci[1],3), 
+    sep="")
+```
+
+Since the size of the CI is wider for the "age = 30" prediction, it can be concluded that that prediction is less precise with respect to the other one. Moreover, this could have also been suggested by the distribution of the age variable, presenting age = 30 as a potentially more extreme value (keeping in mind although that this is just a possibility since the sample size is very small).
+
+```{r, echo=FALSE}
+plot(df$x, ylab="Age", main="Age sample values", pch=19, col="#a9f731")
+```
+
+# Exercise 2
+
+## 2A)
+```{r}
+set.seed(42)
+
+# State space
+S <- c(1,2,3)
+
+# Transition Probability Matrix
+tpm <- matrix(c(0, 1/2, 1/2, 5/8 ,1/8 ,1/4, 2/3, 1/3, 0), nrow = 3, byrow = T)
+
+# Starting state at time 0
+x0 <- 1
+n.sample <- 1000
+
+# Initialize the chain
+chain <- rep(NA, n.sample + 1)
+
+# Set the starting value of the chain
+chain[1] <- x0
+
+# MCMC Simulation
+for(t in 1:n.sample){
+  chain[t+1] <- sample(x = S, size = 1, prob = tpm[chain[t],])
+}
+
+#Trace Plot
+plot(0:n.sample, chain, ylim=c(0,4), type="b", pch=19, main="Trace plot of the MC",
+     xlab="iteration", ylab=expression(X[t]))
+```
+
+Also here there is no trend increasing/decreasing with the number of iterations. Instead, there are fluctuations from the beginning to the end.
+
+## 2B)
+
+```{r}
+
+# Empirical Relative Frequency of the three states
+prop.table(table(chain))
+```
+
+## 2C)
+
+```{r}
+
+set.seed(42)
+n.sample <- 1000
+n.chains <- 500
+final.states <- rep(NA, n.chains)
+
+for(c in 1:n.chains){
+  for(t in 1:n.sample){
+    chain[t+1] <- sample(x = S, size = 1, prob = tpm[chain[t],])
+  }
+  
+  final.states[c] <-  chain[t+1]
+}
+
+# Empirical Relative Frequency of the final states
+prop.table(table(final.states))
+```
+
+This simulation approximates the probability of ending up in that state at that time, i.e. in one of the three states after 1000 iterations starting from $X_0 = 1$. 
+
+In the previous point instead, the quantity being approximated by the MCMC simulation was the stationary distribution.
+
+## 2D)
+
+Given a Transition Probability Matrix (e.g., P), the stationary distribution $\pi = (\pi_1,\pi_2,\pi_3)^T$ must satisfy the following equation: $P^T \pi = \pi$, or alternatively $\pi$ must be a possible solutions for $(P^T-\lambda I)\pi=0 \;\mid\; \pi_1+\pi_2+\pi_3=1$.  
+
+In R this idea is implemented in the following way:
+```{r, message=FALSE}
+
+pi <- eigen(t(tpm))$vector[,1]/sum(eigen(t(tpm))$vector[,1])
+pi
+
+t(tpm)%*%pi #to double-check
+
+all(round(pi, 7) == round(t(tpm)%*%pi, 7))
+
+#Alternatively..
+suppressWarnings(library(expm))
+stationary <- tpm %^% 1000
+stationary
+```
+
+## 2E)
+
+The stationary distribution seems to be approximated better by the empirical relative frequencies of point *2B*, with respect to the ones of point *2C*. However, this was expectable since the latter is approximating a different distribution as explained in that point.
+
+This difference is even more noticeable at larger values of n.sample, in fact:
+
+```{r}
+# Normal One
+set.seed(42)
+n.sample <- 10000
+chain <- rep(NA, n.sample + 1)
+chain[1] <- x0
+for(t in 1:n.sample){
+  chain[t+1] <- sample(x = S, size = 1, prob = tpm[chain[t],])
+}
+normal <- unname(prop.table(table(chain)))
+  
+# Final State
+set.seed(42)
+n.sample <- 10000
+chain <- rep(NA, n.sample + 1)
+chain[1] <- x0
+n.chains <- 500
+
+for(c in 1:n.chains){
+  for(t in 1:n.sample){
+    chain[t+1] <- sample(x = S, size = 1, prob = tpm[chain[t],])
+  }
+  final.states[c] <-  chain[t+1]
+}
+final <- unname(prop.table(table(final.states)))
+
+cat("Stationary Distribution: ", pi[1], " ", pi[2]," ", pi[3], "\n", "Point '2B' Distribution: ", normal[1], " ", normal[2]," ", normal[3], "\n", "Point '2C' Distribution: ", final[1], "     ", final[2],"      ", final[3], sep="")
+```
+
+## 2F)
+
+```{r}
+
+x0 <- 2
+
+# Normal One
+set.seed(42)
+n.sample <- 1000
+chain <- rep(NA, n.sample + 1)
+chain[1] <- x0
+for(t in 1:n.sample){
+  chain[t+1] <- sample(x = S, size = 1, prob = tpm[chain[t],])
+}
+normal <- unname(prop.table(table(chain)))
+  
+# Final State
+set.seed(42)
+chain <- rep(NA, n.sample + 1)
+n.chains <- 500
+chain[1] <- x0
+
+for(c in 1:n.chains){
+  for(t in 1:n.sample){
+    chain[t+1] <- sample(x = S, size = 1, prob = tpm[chain[t],])
+  }
+  final.states[c] <-  chain[t+1]
+}
+final <- unname(prop.table(table(final.states)))
+
+cat("Stationary Distribution: ", pi[1], " ", pi[2]," ", pi[3], "\n", "Point '2B' Distribution: ", normal[1], " ", normal[2]," ", normal[3], "\n", "Point '2C' Distribution: ", final[1], "     ", final[2],"     ", final[3], sep="")
+  
+```
+
+Changing the starting state will apparently leave the empirical relative frequency of the three states unchanged for point *2C*, but it will affect slightly the one of point *2B* (again, it can be expected that at larger values of *n.sample* and towards convergence the starting state will be less and less relevant).

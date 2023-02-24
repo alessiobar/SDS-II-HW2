@@ -1,0 +1,14 @@
+#  MODEL SPECIFICATION 
+
+model
+	{
+		for( i in 1:N ) {
+			Y[i] ~ dnorm(mu[i], precision)
+			mu[i] <- alpha - beta * pow(gamma,x[i])			
+		}
+		alpha ~ dnorm(0.0, 1.0E-3)I(1,)
+		beta ~ dnorm(0.0, 1.0E-3)I(1,)
+		gamma ~ dbeta(1.0, 1.0)
+		precision ~ dgamma(2.5, 0.1125)
+	}
+
